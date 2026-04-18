@@ -3,7 +3,7 @@ use std::process::Command;
 
 use opencv::{
   Result,
-  core::{Mat, Size},
+  core::{self, Mat, Size},
   imgcodecs, imgproc,
   prelude::*,
   videoio::VideoWriter,
@@ -11,10 +11,11 @@ use opencv::{
 
 fn main() -> Result<()> {
   // ── Configuration ────────────────────────────────────────────────────────
-  let images_dir = "images"; // folder containing input images
-  let output_path = "output.mp4"; // output video file
-  let fps: f64 = 30.0; // frames per second
-  let seconds_per_image: f64 = 0.5; // how long each image is shown
+  let images_dir = "images";        // folder containing input images
+  let output_path = "output.mp4";   // output video file
+  let fps: f64 = 30.0;              // frames per second
+  let seconds_per_image: f64 = 0.4; // how long each image is shown (hold time, excluding fade)
+  let seconds_fade: f64 = 0.1;      // crossfade duration in seconds
   // ─────────────────────────────────────────────────────────────────────────
 
   // Collect image files and sort them by filename
@@ -46,7 +47,8 @@ fn main() -> Result<()> {
   }
 
   let frame_size = Size::new(first.cols(), first.rows());
-  let frames_per_image = (fps * seconds_per_image).round() as i32;
+  let hold_frames = (fps * seconds_per_image).round() as i32;
+  let fade_frames = (fps * seconds_fade).round() as i32;
 
   // mp4v (MPEG-4 Part 2) — high-quality, widely supported .mp4 codec
   let fourcc = VideoWriter::fourcc('m', 'p', '4', 'v')?;
@@ -58,49 +60,59 @@ fn main() -> Result<()> {
   }
 
   println!(
-    "Video: {}x{} @ {} fps | {:.1}s per image ({} frames) | {} images",
+    "Video: {}x{} @ {} fps | {:.1}s hold + {:.1}s fade | {} images",
     frame_size.width,
     frame_size.height,
     fps,
     seconds_per_image,
-    frames_per_image,
+    seconds_fade,
     image_paths.len()
   );
   println!();
 
-  for (i, path) in image_paths.iter().enumerate() {
-    let path_str = path.to_str().unwrap();
+  // Load and resize a frame to the canonical size
+  let load_frame = |path: &PathBuf| -> Result<Mat> {
+    let img = imgcodecs::imread(path.to_str().unwrap(), imgcodecs::IMREAD_COLOR)?;
+    if img.cols() != frame_size.width || img.rows() != frame_size.height {
+      let mut resized = Mat::default();
+      imgproc::resize(&img, &mut resized, frame_size, 0.0, 0.0, imgproc::INTER_LANCZOS4)?;
+      Ok(resized)
+    } else {
+      Ok(img)
+    }
+  };
 
-    // Read at full original quality — IMREAD_COLOR keeps BGR channels intact
-    let img = imgcodecs::imread(path_str, imgcodecs::IMREAD_COLOR)?;
-    if img.empty() {
-      eprintln!("  [SKIP] Cannot read: {}", path_str);
+  let mut current = load_frame(&image_paths[0])?;
+
+  for i in 0..image_paths.len() {
+    let path = &image_paths[i];
+
+    if current.empty() {
+      eprintln!("  [SKIP] Cannot read: {}", path.display());
+      // Try to load next
+      if i + 1 < image_paths.len() {
+        current = load_frame(&image_paths[i + 1])?;
+      }
       continue;
     }
 
-    // Resize only if this image has different dimensions than the first one.
-    // INTER_LANCZOS4 gives the best quality when scaling is unavoidable.
-    let frame: Mat;
-    let frame_ref = if img.cols() != frame_size.width || img.rows() != frame_size.height {
-      let mut resized = Mat::default();
-      imgproc::resize(
-        &img,
-        &mut resized,
-        frame_size,
-        0.0,
-        0.0,
-        imgproc::INTER_LANCZOS4,
-      )?;
-      frame = resized;
-      &frame
-    } else {
-      frame = img;
-      &frame
-    };
+    // Write hold frames for the current image
+    for _ in 0..hold_frames {
+      writer.write(&current)?;
+    }
 
-    // Duplicate the frame to fill the desired display duration
-    for _ in 0..frames_per_image {
-      writer.write(frame_ref)?;
+    // Crossfade into the next image (skip fade after the last image)
+    if i + 1 < image_paths.len() {
+      let next = load_frame(&image_paths[i + 1])?;
+      if !next.empty() {
+        for f in 0..fade_frames {
+          let alpha = (f as f64 + 1.0) / (fade_frames as f64 + 1.0); // 0 < alpha < 1
+          let mut blended = Mat::default();
+          core::add_weighted(&current, 1.0 - alpha, &next, alpha, 0.0, &mut blended, -1)?;
+          writer.write(&blended)?;
+        }
+        current = next;
+      }
     }
 
     println!(
