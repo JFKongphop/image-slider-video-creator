@@ -119,24 +119,24 @@ fn main() -> Result<()> {
   // ffmpeg cannot read the file until this is done.
   drop(writer);
 
-  // Compress the full-resolution video down to 1080p
-  compress_to_1080p(output_path, "output_1080p.mp4");
+  // Compress the full-resolution video down to 2160p
+  compress_to_2160p(output_path, "output_2160p.mp4");
 
   Ok(())
 }
 
-/// Re-encodes `input` as H.264 scaled to 1080p height (width auto, keeps aspect ratio).
+/// Re-encodes `input` as H.264 scaled to 2160p height (width auto, keeps aspect ratio).
 /// The output is written to `output`.
-fn compress_to_1080p(input: &str, output: &str) {
-  println!("Compressing to 1080p → {}", output);
+fn compress_to_2160p(input: &str, output: &str) {
+  println!("Compressing to 2160p → {}", output);
 
   let status = Command::new("ffmpeg")
     .args([
       "-y",
       "-i", input,
-      // Scale so that height = 1080; width rounded to nearest even number.
-      // If the video is already ≤1080p tall this is a no-op scale.
-      "-vf", "scale=-2:min(ih\\,1080)",
+      // Scale so that height = 2160; width rounded to nearest even number.
+      // If the video is already ≤2160p tall this is a no-op scale.
+      "-vf", "scale=-2:min(ih\\,2160)",
       "-vcodec", "libx264",
       "-crf", "18",          // visually lossless
       "-preset", "slow",     // better compression ratio
@@ -148,7 +148,7 @@ fn compress_to_1080p(input: &str, output: &str) {
     .expect("Failed to spawn ffmpeg. Make sure it is installed (brew install ffmpeg).");
 
   if status.success() {
-    println!("1080p video saved: {}", output);
+    println!("2160p video saved: {}", output);
   } else {
     eprintln!("ffmpeg exited with status: {}", status);
   }
