@@ -14,7 +14,7 @@ fn main() -> Result<()> {
   let images_dir = "images";        // folder containing input images
   let output_path = "output.mp4";   // output video file
   let fps: f64 = 30.0;              // frames per second
-  let seconds_per_image: f64 = 0.4; // how long each image is shown (hold time, excluding fade)
+  let seconds_per_image: f64 = 0.9; // how long each image is shown (hold time, excluding fade)
   let seconds_fade: f64 = 0.1;      // crossfade duration in seconds
   // ─────────────────────────────────────────────────────────────────────────
 
