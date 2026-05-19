@@ -19,10 +19,10 @@ use opencv::{
 
 fn main() -> Result<()> {
   // ── Configuration ────────────────────────────────────────────────────────
-  let images_dir = "images/bw";
-  let output_path = "bw.mp4";
+  let images_dir = "images/dog";
+  let output_path = "dog.mp4";
   let fps: f64 = 30.0;
-  let seconds_per_image: f64 = 1.1;
+  let seconds_per_image: f64 = 0.1;
   let seconds_fade: f64 = 0.1;
   let target_height: i32 = 2160;
   // ─────────────────────────────────────────────────────────────────────────
@@ -135,17 +135,19 @@ fn main() -> Result<()> {
     // The next image should already be decoded (or very close to it)
     if i + 1 < image_paths.len() {
       if let Some(next) = decoded_rx.recv().unwrap() {
-        for f in 0..fade_frames {
-          let alpha = (f as f64 + 1.0) / (fade_frames as f64 + 1.0);
-          let mut blended = Mat::default();
-          core::add_weighted(
-            &current, 1.0 - alpha,
-            &next,    alpha,
-            0.0, &mut blended, -1,
-          )?;
-          ffmpeg_stdin.write_all(blended.data_bytes()?).unwrap();
-        }
-        current = next;
+        // ── Crossfade (comment out to disable) ──────────────────────────
+        // for f in 0..fade_frames {
+        //   let alpha = (f as f64 + 1.0) / (fade_frames as f64 + 1.0);
+        //   let mut blended = Mat::default();
+        //   core::add_weighted(
+        //     &current, 1.0 - alpha,
+        //     &next,    alpha,
+        //     0.0, &mut blended, -1,
+        //   )?;
+        //   ffmpeg_stdin.write_all(blended.data_bytes()?).unwrap();
+        // }
+        // ────────────────────────────────────────────────────────────────
+        current = next; // must keep — advances to the next image
       }
     }
 
@@ -256,6 +258,13 @@ fn spawn_ffmpeg(frame_size: Size, fps: f64, output: &str, use_hwenc: bool) -> st
 
   args.extend([
     "-pix_fmt".to_string(), "yuv420p".to_string(),
+    // Explicitly tag color space so encoder and player agree on BT.709.
+    // Without these, ffmpeg defaults to BT.601 for the BGR→YUV conversion
+    // and players may interpret the matrix differently, causing color shifts.
+    "-colorspace".to_string(), "bt709".to_string(),
+    "-color_primaries".to_string(), "bt709".to_string(),
+    "-color_trc".to_string(), "bt709".to_string(),
+    "-color_range".to_string(), "tv".to_string(),
     output.to_string(),
   ]);
 
